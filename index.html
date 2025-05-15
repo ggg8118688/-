@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <title>لعبة كافجي</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { margin: 0; background: #111; color: white; font-family: sans-serif; text-align: center; }
+    canvas { background: #222; display: block; margin: 10px auto; border: 2px solid #555; }
+    #menu, #controls, #store, #winScreen { margin-top: 10px; }
+    button {
+      font-size: 18px; padding: 10px; margin: 5px;
+      background: #444; color: white; border: none; border-radius: 5px;
+    }
+    #score, #lives, #level { font-size: 18px; margin: 5px; }
+    #intro { font-size: 20px; white-space: pre-wrap; margin-top: 30px; min-height: 60px; }
+  </style>
+</head>
+<body>
+  <h1>لعبة كافجي</h1>
+  <div id="intro"></div>
+  <div id="menu" style="display:none;">
+    <button onclick="startGame()">ابدأ اللعب</button>
+  </div>
+  <canvas id="game" width="360" height="480"></canvas>
+  <div id="hud" style="display:none;">
+    <div id="score">النقاط: 0</div>
+    <div id="lives">القلوب: ❤️❤️❤️</div>
+    <div id="level">المستوى: 1</div>
+  </div>
+  <div id="controls" style="display:none;">
+    <button ontouchstart="moveLeft = true" ontouchend="moveLeft = false">◀</button>
+    <button ontouchstart="moveRight = true" ontouchend="moveRight = false">▶</button>
+    <button onclick="shoot()">إطلاق</button>
+  </div>
+  <div id="store" style="display:none;">
+    <h3>المتجر - اختر تطوير:</h3>
+    <button onclick="upgrade('double')">رصاص مزدوج (20 نقطة)</button>
+    <button onclick="upgrade('heart')">قلب إضافي (15 نقطة)</button>
+    <button onclick="nextLevel()">الاستمرار</button>
+  </div>
+
+  <div id="winScreen" style="display:none;">
+    <h3>أحسنت!</h3>
+    <p>لقد أكملت المستوى <span id="winLevel"></span></p>
+    <button onclick="goToStore()">الذهاب إلى المتجر</button>
+  </div>
+
+  <audio id="shootSound" src="https://cdn.pixabay.com/audio/2022/10/03/audio_3f5f2c5528.mp3"></audio>
+  <audio id="hitSound" src="https://cdn.pixabay.com/audio/2022/03/15/audio_1f6e78cbf3.mp3"></audio>
+  <audio id="bgMusic" src="https://cdn.pixabay.com/audio/2022/08/17/audio_114b79c8fd.mp3" loop></audio>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+    const shootSound = document.getElementById("shootSound");
+    const hitSound = document.getElementById("hitSound");
+    const bgMusic = document.getElementById("bgMusic");
+
+    const player = { x: 160, y: 420, w: 20, h: 20, color: "cyan", hearts: 3 };
+    let bullets = [];
+    let enemies = [];
+    let score = 0;
+    let moveLeft = false;
+    let moveRight = false;
+    let gameOver = false;
+    let level = 1;
+    let doubleShot = false;
+    let enemySpeed = 2;
+    let spawnRate = 1500;
+    let spawnInterval;
+
+    function drawPlayer() {
+      ctx.fillStyle = player.color;
+      ctx.fillRect(player.x, player.y, player.w, player.h);
+    }
+
+    function drawBullets() {
+      ctx.fillStyle = "yellow";
+      bullets.forEach(b => ctx.fillRect(b.x, b.y, 4, 10));
+    }
+
+    function drawEnemies() {
+      enemies.forEach(e => {
+        ctx.fillStyle = e.color;
+        ctx.fillRect(e.x, e.y, 20, 20);
+      });
+    }
+
+    function shoot() {
+      bullets.push({ x: player.x + 8, y: player.y });
+      if (doubleShot) bullets.push({ x: player.x + 2, y: player.y });
+      shootSound.currentTime = 0;
+      shootSound.play();
+    }
+
+    function spawnEnemy() {
+      const x = Math.random() * (canvas.width - 20);
+      const color = Math.random() < 0.5 ? "red" : "orange";
+      enemies.push({ x: x, y: 0, color: color });
+    }
+
+    function updateHUD() {
+      document.getElementById("score").textContent = "النقاط: " + score;
+      document.getElementById("lives").textContent = "القلوب: " + "❤️".repeat(player.hearts);
+      document.getElementById("level").textContent = "المستوى: " + level;
+    }
+
+    function updateGame() {
+      if (gameOver) {
+        ctx.fillStyle = "white";
+        ctx.font = "24px Arial";
+        ctx.fillText("انتهت اللعبة!", 100, 240);
+        clearInterval(spawnInterval);
+        document.getElementById("menu").innerHTML = '<button onclick="startGame()">إعادة اللعب</button>';
+        document.getElementById("menu").style.display = "block";
+        return;
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      if (moveLeft && player.x > 0) player.x -= 3;
+      if (moveRight && player.x < canvas.width - player.w) player.x += 3;
+
+      bullets.forEach(b => b.y -= 5);
+      bullets = bullets.filter(b => b.y > 0);
+
+      enemies.forEach(e => e.y += enemySpeed);
+
+      bullets.forEach((b, bi) => {
+        enemies.forEach((e, ei) => {
+          if (b.x < e.x + 20 && b.x + 4 > e.x && b.y < e.y + 20 && b.y + 10 > e.y) {
+            enemies.splice(ei, 1);
+            bullets.splice(bi, 1);
+            score += 10;
+            hitSound.currentTime = 0;
+            hitSound.play();
+          }
+        });
+      });
+
+      enemies.forEach((e, ei) => {
+        if (
+          e.x < player.x + player.w &&
+          e.x + 20 > player.x &&
+          e.y < player.y + player.h &&
+          e.y + 20 > player.y
+        ) {
+          enemies.splice(ei, 1);
+          player.hearts -= 1;
+          if (player.hearts <= 0) {
+            gameOver = true;
+            bgMusic.pause();
+          }
+        }
+      });
+
+      drawPlayer();
+      drawBullets();
+      drawEnemies();
+      updateHUD();
+
+      if (score >= level * 50) {
+        clearInterval(spawnInterval);
+        showWinScreen();
+      } else {
+        requestAnimationFrame(updateGame);
+      }
+    }
+
+    function startGame() {
+      bullets = [];
+      enemies = [];
+      score = 0;
+      player.hearts = 3;
+      gameOver = false;
+      level = 1;
+      doubleShot = false;
+      enemySpeed = 2;
+      spawnRate = 1500;
+
+      document.getElementById("menu").style.display = "none";
+      document.getElementById("controls").style.display = "block";
+      document.getElementById("hud").style.display = "block";
+      document.getElementById("store").style.display = "none";
+      document.getElementById("winScreen").style.display = "none";
+
+      bgMusic.currentTime = 0;
+      bgMusic.play();
+
+      spawnInterval = setInterval(spawnEnemy, spawnRate);
+      updateGame();
+    }
+
+    function showWinScreen() {
+      document.getElementById("winLevel").textContent = level;
+      document.getElementById("winScreen").style.display = "block";
+    }
+
+    function goToStore() {
+      document.getElementById("winScreen").style.display = "none";
+      document.getElementById("store").style.display = "block";
+    }
+
+    function nextLevel() {
+      level += 1;
+      bullets = [];
+      enemies = [];
+      enemySpeed += 0.5;
+      spawnRate = Math.max(500, spawnRate - 100);
+      document.getElementById("store").style.display = "none";
+      spawnInterval = setInterval(spawnEnemy, spawnRate);
+      updateGame();
+    }
+
+    function upgrade(type) {
+      if (type === 'double' && score >= 20) {
+        doubleShot = true;
+        score -= 20;
+      } else if (type === 'heart' && score >= 15) {
+        player.hearts += 1;
+        score -= 15;
+      }
+      updateHUD();
+    }
+
+    // كتابة المقدمة حرفًا حرفًا
+    const introText = "شركة الحسن لتقنية تقدم لعبة كافجي";
+    let i = 0;
+    const introElement = document.getElementById("intro");
+
+    function typeIntro() {
+      if (i < introText.length) {
+        introElement.textContent += introText.charAt(i);
+        i++;
+        setTimeout(typeIntro, 100);
+      } else {
+        document.getElementById("menu").style.display = "block";
+      }
+    }
+
+    window.onload = typeIntro;
+  </script>
+</body>
+</html>
